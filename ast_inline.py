@@ -16,12 +16,24 @@ def unpack_call(call_frame):
         func = call_frame.f_globals.get(func_name)
         method_ptr = None
     elif isinstance(call.func, ast.Attribute):
-        instance_name = call.func.value.id
         method_name = call.func.attr
-        func = getattr(call_frame.f_globals.get(instance_name), method_name)
+        attr_list = []
+        func_val = call.func.value
+        while not isinstance(func_val, ast.Name):
+            attr_list.append(func_val.attr)
+            func_val = func_val.value
+        attr_list.append(func_val.id)
+        instance_name = attr_list.pop()
+        instance = call_frame.f_globals.get(instance_name)
+        while attr_list:
+            instance_name = attr_list.pop()
+            instance = getattr(instance, instance_name)
+
+        func = getattr(instance, method_name)
         method_ptr = {'instance_name': instance_name,
+                      'instance_ref': call.func.value,
                       'method_name': method_name,
-                      'instance_type': type(call_frame.f_globals.get(instance_name))}
+                      'instance_type': type(instance)}
     else:
         raise NotImplementedError
     args = [callOrValue(arg) for arg in call.args]
@@ -40,16 +52,20 @@ def get_argument_map(func, args, kwargs, method_ptr, debug=False):
         return post_argument_map
 
     argument_map = inspect.getcallargs(func, *args, **kwargs)
+    ic(argument_map)
     post_argument_map = {}
     for k, v in argument_map.items():
         if method_ptr and isinstance(v, method_ptr['instance_type']):
-            post_argument_map[k] = ast.Name(id=method_ptr['instance_name'],
-                                            ctx=ast.Load())
+            # post_argument_map[k] = ast.Name(id=method_ptr['instance_name'],
+            #                                 ctx=ast.Load())
+            post_argument_map[k] = method_ptr['instance_ref']
             method_ptr['instance_self_ref_name'] = k
         elif isinstance(v, (ast.AST, tuple, dict)):
             post_argument_map[k] = v
         else:
-            obj_module = ast.parse(f'{v}')
+            if isinstance(v, str):
+                v = f"'{v}'"
+            obj_module = ast.parse(f"{v}")
             obj_ast = obj_module.body[0].value
             post_argument_map[k] = obj_ast
 
@@ -69,6 +85,18 @@ class VariableRenameTransformer(ast.NodeTransformer):
     def visit_Name(self, node):
         if node.id == self.old_name:
             node.id = self.new_name
+        return self.generic_visit(node)
+
+
+class VariableNodeTransformer(ast.NodeTransformer):
+    def __init__(self, var_name: str, new_node: ast.AST):
+        self.var_name = var_name
+        self.new_node = new_node
+
+    def visit_Name(self, node):
+        if node.id == self.var_name:
+            self.new_node.ctx = node.ctx
+            return self.new_node
         return self.generic_visit(node)
 
 
@@ -108,10 +136,8 @@ def extrac_arg_names(argument_map: dict) -> List[str]:
     return list(set(arg_names))
 
 
-def swap_var_names(func_def: ast.FunctionDef, argument_map: dict, pre_swap: dict, debug=False):
+def swap_var_names(func_def: ast.FunctionDef, argument_map: dict, pre_swap: dict):
     for arg_name, val in argument_map.items():
-        if debug:
-            print(arg_name, val)
         new_var = pre_swap.get(arg_name, arg_name)
         if isinstance(val, ast.AST):
             func_def.body.insert(
@@ -279,9 +305,10 @@ def inline_src(called, debug=False):
     func_ast = ast.parse(dedented_src)
     new_func_ast: ast.Module = ast.parse(dedented_src)
     if debug:
+        print('# ------------------------ original ast: ')
         print(ast.dump(func_ast, indent=4))
 
-    print('------------------------ original def: ')
+    print('# ------------------------ original def: ')
     # code = ast.unparse(func_ast)
     # print(code)
     print(src)
@@ -294,15 +321,15 @@ def inline_src(called, debug=False):
     var_to_new_var = rename_var_names(new_func_ast, arg_names)
     ic(var_to_new_var)
 
-    if method_ptr:
-        self_rename = VariableRenameTransformer(method_ptr['instance_self_ref_name'],
-                                                method_ptr['instance_name'], )
+    if method_ptr and 'instance_self_ref_name' in method_ptr:  # todo: handle method call of class instead of instance
+        self_rename = VariableNodeTransformer(method_ptr['instance_self_ref_name'],
+                                              method_ptr['instance_ref'], )
         self_rename.visit(new_func_ast)
         argument_map.pop(method_ptr['instance_self_ref_name'])
 
     # Swap variable names, append input if needed
     new_func_def: ast.FunctionDef = new_func_ast.body[0]
-    swap_var_names(new_func_def, argument_map, var_to_new_var, debug=debug)
+    swap_var_names(new_func_def, argument_map, var_to_new_var)
 
     # module_file_path = inspect.getsourcefile(func)
     # with open(module_file_path, 'r') as file:
@@ -312,10 +339,13 @@ def inline_src(called, debug=False):
     # new_code = ast.unparse(new_func_ast)
 
     ReturnToAssignmentTransformer(new_func_def.name + '_ret').visit(new_func_ast)
+    if debug:
+        print('# ------------------------ new ast: ')
+        print(ast.dump(new_func_ast, indent=4))
     new_code = ast.unparse(new_func_def.body)
-    print('------------------ inlined code block:')
+    print('# ------------------ inlined code block:')
     print(new_code)
-    print('--------------------------------------')
+    print('# --------------------------------------')
 
     if debug:
         return argument_map, func_ast, new_func_ast
@@ -330,9 +360,8 @@ if __name__ == '__main__':
     from icecream import Source, ic
 
     from ast_inline import VariableCollector, extract_import, inline_src
-    from mockeries.mock_module import A, add_func
+    from mockeries.mock_module import A, B, add_func
 
-    b, c = 1, 1
     x = 1
     y = 2
     z = 'rr'
@@ -340,9 +369,10 @@ if __name__ == '__main__':
     # argument_map, func_ast, new_func_ast = inline_src(add_func(1, 1), debug=True)
     inline_src(add_func(1, 1))
 
+    b = B()
     a = A()
-    ic(a.p(1))
-    argument_map, func_ast, new_func_ast = inline_src(a.p(), debug=True)
+    ic(b.a.p(1))
+    argument_map, func_ast, new_func_ast = inline_src(a.p(2), debug=True)
 
     print(ast.dump(func_ast, indent=4))
     print(ast.unparse(func_ast))
