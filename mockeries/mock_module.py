@@ -19,5 +19,5 @@ class A:
     def __init__(self):
         self.a = 1
 
-    def p(self):
-        print(self.a)
+    def p(self, b=3):
+        return self.a + b

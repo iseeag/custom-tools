@@ -3,6 +3,7 @@ import inspect
 import textwrap
 from typing import List
 
+import ipdb
 from icecream import Source, callOrValue, ic
 
 
@@ -10,31 +11,49 @@ def unpack_call(call_frame):
     callNode = Source.executing(call_frame).node
 
     call = callNode.args[0]
-    func = call_frame.f_globals.get(call.func.id)
+    if isinstance(call.func, ast.Name):
+        func_name = call.func.id
+        func = call_frame.f_globals.get(func_name)
+        method_ptr = None
+    elif isinstance(call.func, ast.Attribute):
+        instance_name = call.func.value.id
+        method_name = call.func.attr
+        func = getattr(call_frame.f_globals.get(instance_name), method_name)
+        method_ptr = {'instance_name': instance_name,
+                      'method_name': method_name,
+                      'instance_type': type(call_frame.f_globals.get(instance_name))}
+    else:
+        raise NotImplementedError
     args = [callOrValue(arg) for arg in call.args]
     kwargs = {kw.arg: callOrValue(kw.value) for kw in call.keywords}
 
-    return func, args, kwargs
+    return func, args, kwargs, method_ptr
 
 
-def get_argument_map(func, args, kwargs, debug=False):
-    argument_map = inspect.getcallargs(func, *args, **kwargs)
-    post_argument_map = {}
-    for k, v in argument_map.items():
-        if isinstance(v, (ast.AST, tuple, dict)):
-            post_argument_map[k] = v
-        else:
-            obj_module = ast.parse(f'{v}')
-            obj_ast = obj_module.body[0].value
-            post_argument_map[k] = obj_ast
-
+def get_argument_map(func, args, kwargs, method_ptr, debug=False):
     if debug:
         post_argument_map = inspect.getcallargs(
             func,
             *[ast.unparse(arg) for arg in args],
             **{k: ast.unparse(v) for k, v in kwargs.items()}
         )
-    return post_argument_map
+        return post_argument_map
+
+    argument_map = inspect.getcallargs(func, *args, **kwargs)
+    post_argument_map = {}
+    for k, v in argument_map.items():
+        if method_ptr and isinstance(v, method_ptr['instance_type']):
+            post_argument_map[k] = ast.Name(id=method_ptr['instance_name'],
+                                            ctx=ast.Load())
+            method_ptr['instance_self_ref_name'] = k
+        elif isinstance(v, (ast.AST, tuple, dict)):
+            post_argument_map[k] = v
+        else:
+            obj_module = ast.parse(f'{v}')
+            obj_ast = obj_module.body[0].value
+            post_argument_map[k] = obj_ast
+
+    return post_argument_map, method_ptr
 
 
 def count_trailing_underscores(var_name):
@@ -247,10 +266,12 @@ def inline_src(called, debug=False):
     """
     # Get func/method and call args
     callFrame = inspect.currentframe().f_back
-    func, args, kwargs = unpack_call(callFrame)
-    argument_map = get_argument_map(func, args, kwargs)
-    argument_map_debug = get_argument_map(func, args, kwargs, debug=True)
-    ic(argument_map_debug)
+    func, args, kwargs, method_ptr = unpack_call(callFrame)
+    argument_map, method_ptr = get_argument_map(func, args, kwargs, method_ptr)
+    input_arguments = get_argument_map(func, args, kwargs, method_ptr, debug=True)
+    if debug:
+        ic(argument_map)
+    ic(input_arguments)
 
     # Get source code
     src = inspect.getsource(func)
@@ -260,7 +281,7 @@ def inline_src(called, debug=False):
     if debug:
         print(ast.dump(func_ast, indent=4))
 
-    print('---------------------- original func def: ')
+    print('------------------------ original def: ')
     # code = ast.unparse(func_ast)
     # print(code)
     print(src)
@@ -272,6 +293,12 @@ def inline_src(called, debug=False):
     # Rename vars in func/method to avoid conflicts
     var_to_new_var = rename_var_names(new_func_ast, arg_names)
     ic(var_to_new_var)
+
+    if method_ptr:
+        self_rename = VariableRenameTransformer(method_ptr['instance_self_ref_name'],
+                                                method_ptr['instance_name'], )
+        self_rename.visit(new_func_ast)
+        argument_map.pop(method_ptr['instance_self_ref_name'])
 
     # Swap variable names, append input if needed
     new_func_def: ast.FunctionDef = new_func_ast.body[0]
@@ -286,12 +313,14 @@ def inline_src(called, debug=False):
 
     ReturnToAssignmentTransformer(new_func_def.name + '_ret').visit(new_func_ast)
     new_code = ast.unparse(new_func_def.body)
-    print('--------------------------- inlined code block:')
+    print('------------------ inlined code block:')
     print(new_code)
-    print('-------------------------------------------')
+    print('--------------------------------------')
 
     if debug:
         return argument_map, func_ast, new_func_ast
+    else:
+        return called
 
 
 if __name__ == '__main__':
@@ -303,7 +332,6 @@ if __name__ == '__main__':
     from ast_inline import VariableCollector, extract_import, inline_src
     from mockeries.mock_module import A, add_func
 
-    a = A()
     b, c = 1, 1
     x = 1
     y = 2
@@ -311,6 +339,10 @@ if __name__ == '__main__':
     argument_map, func_ast, new_func_ast = inline_src(add_func([1], x, 1, 2, 3, k={3: 4}, z=z), debug=True)
     # argument_map, func_ast, new_func_ast = inline_src(add_func(1, 1), debug=True)
     inline_src(add_func(1, 1))
+
+    a = A()
+    ic(a.p(1))
+    argument_map, func_ast, new_func_ast = inline_src(a.p(), debug=True)
 
     print(ast.dump(func_ast, indent=4))
     print(ast.unparse(func_ast))
