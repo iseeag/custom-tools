@@ -10,10 +10,16 @@ from mockeries.mock_module import A, B, add_func
 x = 1
 y = 2
 z = 'rr'
-argument_map, func_ast, new_func_ast = inline_src(add_func([1], x, 1, 2, 3, k={3: 4}, z=z), debug=True)
-# argument_map, func_ast, new_func_ast = inline_src(add_func(1, 1), debug=True)
 inline_src(add_func(1, 1))
 
+inline_src(add_func([1], x, 1, 2, 3, k={3: 4}, z=z))
+
+# ------- test function with *args and **kwargs
+some_kwargs = {'k': 9, 'b': 3}
+args = (1, 2, 3)
+inline_src(add_func(1, 2, **some_kwargs))
+inline_src(add_func(*args, **some_kwargs))
+inspect.getcallargs(add_func, *args, **some_kwargs)
 # ------- test instance method
 a = A()
 argument_map, func_ast, new_func_ast = inline_src(a.p(2), debug=True)

@@ -7,6 +7,43 @@ import ipdb
 from icecream import Source, callOrValue, ic
 
 
+def find_variable_name(var, global_ctx: dict):
+    for name, value in global_ctx.items():
+        if value is var:
+            return name
+    return None
+
+
+def parse_obj_to_ast_node(obj, global_ctx: dict = None):
+    if isinstance(obj, (int, float, str, bool)):
+        return ast.Constant(value=obj)
+    elif var_name := find_variable_name(obj, global_ctx or {}):
+        return ast.Name(id=var_name, ctx=ast.Load())
+    elif isinstance(obj, list):
+        return ast.List(elts=[parse_obj_to_ast_node(item) for item in obj])
+    elif isinstance(obj, dict):
+        return ast.Dict(keys=[parse_obj_to_ast_node(k) for k in obj.keys()],
+                        values=[parse_obj_to_ast_node(v) for v in obj.values()])
+    elif isinstance(obj, tuple):
+        return ast.Tuple(elts=[parse_obj_to_ast_node(item) for item in obj])
+    elif isinstance(obj, set):
+        return ast.Set(elts=[parse_obj_to_ast_node(item) for item in obj])
+    elif isinstance(obj, type(None)):
+        return ast.Constant(value=None)
+    elif isinstance(obj, ast.AST):
+        return obj
+    else:
+        raise NotImplementedError(f'obj type {type(obj)} cannot be parsed to ast node')
+
+
+def expand_kwargs(node: ast.Name, global_ctx: dict):
+    var_name = node.id
+    var = global_ctx.get(var_name)
+    assert isinstance(var, dict)
+    kwargs = {k: parse_obj_to_ast_node(v, global_ctx) for k, v in var.items()}
+    return kwargs
+
+
 def unpack_call(call_frame):
     callNode = Source.executing(call_frame).node
 
@@ -37,7 +74,14 @@ def unpack_call(call_frame):
     else:
         raise NotImplementedError
     args = [callOrValue(arg) for arg in call.args]
-    kwargs = {kw.arg: callOrValue(kw.value) for kw in call.keywords}
+    kwargs = {}
+    for kw in call.keywords:
+        ic(kw.arg, kw.value)
+        if kw.arg is None and isinstance(kw.value, ast.Name):
+            expanded_kwargs = expand_kwargs(kw.value, call_frame.f_globals)
+            kwargs = kwargs | expanded_kwargs
+        else:
+            kwargs[kw.arg] = callOrValue(kw.value)
 
     return func, args, kwargs, method_ptr
 
@@ -51,6 +95,8 @@ def get_argument_map(func, args, kwargs, method_ptr, debug=False):
         )
         return post_argument_map
 
+    ic(args)
+    ic(kwargs)
     argument_map = inspect.getcallargs(func, *args, **kwargs)
     ic(argument_map)
     post_argument_map = {}
@@ -63,10 +109,7 @@ def get_argument_map(func, args, kwargs, method_ptr, debug=False):
         elif isinstance(v, (ast.AST, tuple, dict)):
             post_argument_map[k] = v
         else:
-            if isinstance(v, str):
-                v = f"'{v}'"
-            obj_module = ast.parse(f"{v}")
-            obj_ast = obj_module.body[0].value
+            obj_ast = parse_obj_to_ast_node(v)
             post_argument_map[k] = obj_ast
 
     return post_argument_map, method_ptr
@@ -312,6 +355,7 @@ def inline_src(called, debug=False):
     # Get func/method and call args
     callFrame = inspect.currentframe().f_back
     func, args, kwargs, method_ptr = unpack_call(callFrame)
+    # return kwargs
     argument_map, method_ptr = get_argument_map(func, args, kwargs, method_ptr)
     input_arguments = get_argument_map(func, args, kwargs, method_ptr, debug=True)
     if debug:
