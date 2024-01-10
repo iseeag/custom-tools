@@ -114,6 +114,25 @@ class ReturnToAssignmentTransformer(ast.NodeTransformer):
         return node
 
 
+def replace_return_with_assignment(func_ast: ast.AST, ret_var_name='ret'):
+    if not isinstance(func_ast, ast.FunctionDef):
+        raise TypeError('func_ast must be a FunctionDef')
+    body = func_ast.body
+    ret_nodes = [node for node in body if isinstance(node, ast.Return)]
+    if ret_nodes:
+        ret_node = ret_nodes[0]
+        ret_node_idx = body.index(ret_node)
+        if ret_node.value:
+            new_assignment = ast.Assign(
+                targets=[ast.Name(id=ret_var_name, ctx=ast.Store())],
+                value=ret_node.value
+            )
+            body.insert(ret_node_idx, ast.copy_location(new_assignment, ret_node))
+            body.remove(ret_node)
+    else:
+        return
+
+
 def extrac_arg_names(argument_map: dict) -> List[str]:
     arg_names = []
     for arg_name, val in argument_map.items():
@@ -338,7 +357,8 @@ def inline_src(called, debug=False):
     # print(ast.dump(module_ast, indent=4))
     # new_code = ast.unparse(new_func_ast)
 
-    ReturnToAssignmentTransformer(new_func_def.name + '_ret').visit(new_func_ast)
+    # ReturnToAssignmentTransformer(new_func_def.name + '_ret').visit(new_func_ast)
+    replace_return_with_assignment(new_func_def, new_func_def.name + '_ret')
     if debug:
         print('# ------------------------ new ast: ')
         print(ast.dump(new_func_ast, indent=4))
