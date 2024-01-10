@@ -246,7 +246,7 @@ def swap_var_names(func_def: ast.FunctionDef, argument_map: dict, pre_swap: dict
             continue
 
 
-def rename_var_names(func_ast: ast.AST, arg_names: List[str]):
+def refresh_var_names(func_ast: ast.AST, arg_names: List[str]):
     var_to_new_var = {}
     for arg_name in arg_names:
         base_underscore_count = count_trailing_underscores(arg_name)
@@ -400,10 +400,10 @@ def inline_src(called, debug=False):
     ic(arg_names)
 
     # Rename vars in func/method to avoid conflicts
-    var_to_new_var = rename_var_names(new_func_ast, arg_names)
+    var_to_new_var = refresh_var_names(new_func_ast, arg_names)
     ic(var_to_new_var)
 
-    if method_ptr and 'instance_self_ref_name' in method_ptr:  # todo: handle method call of class instead of instance
+    if method_ptr and 'instance_self_ref_name' in method_ptr:
         self_rename = VariableNodeTransformer(method_ptr['instance_self_ref_name'],
                                               method_ptr['instance_ref'], )
         self_rename.visit(new_func_ast)
