@@ -27,14 +27,14 @@ argument_map, func_ast, new_func_ast = inline_src(b.a.p(2), debug=True)
 inline_src(a.s(2, 3))
 
 # ------ test class method
+inline_src(A.from_int(5))
 
 print(ast.dump(func_ast, indent=4))
 print(ast.unparse(func_ast))
 
 # todo:
 #  1. handle super()
+#  1a. handle calling method from uninitialized class
 #  2. handle __call__
 #  3. handle empty dict **kwargs
 #  4. handle *args generate var = *args erroneous syntax, also check for **kwargs
-#  5. handle class method
-#  6. handle calling method from uninitialized class

@@ -20,8 +20,8 @@ def add_func(x: int, y: int, *args, k=0, **kwargs) -> int:
 
 
 class A:
-    def __init__(self):
-        self.a = 1
+    def __init__(self, a=0):
+        self.a = a
 
     def p(self, b=3):
         return self.a + b
@@ -29,6 +29,10 @@ class A:
     @staticmethod
     def s(a, b):
         return a + b
+
+    @classmethod
+    def from_int(cls, a):
+        return cls(a)
 
 
 class B:
