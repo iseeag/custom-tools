@@ -11,7 +11,6 @@ x = 1
 y = 2
 z = 'rr'
 inline_src(add_func(1, 1))
-
 inline_src(add_func([1], x, 1, 2, 3, k={3: 4}, z=z))
 
 # ------- test function with *args and **kwargs
@@ -32,7 +31,7 @@ ic(b.a.p(1))
 argument_map, func_ast, new_func_ast = inline_src(b.a.p(2), debug=True)
 
 # ------ test static method
-inline_src(a.s(2, 3))
+inline_src(a.s(x, 3))
 
 # ------ test class method
 inline_src(A.from_int(5))
@@ -45,8 +44,9 @@ c = C()
 inline_src(c.q(5))
 inline_src(c.q1(5))
 
+# ------ test __call__
+inline_src(b.__call__())
+inline_src(b())
+
 print(ast.dump(func_ast, indent=4))
 print(ast.unparse(func_ast))
-
-# todo:
-#  1. handle __call__

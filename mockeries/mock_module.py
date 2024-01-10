@@ -39,13 +39,16 @@ class B:
     def __init__(self):
         self.a = A()
 
+    def __call__(self, *args, **kwargs):
+        return self.a.a
+
 
 class C(A):
     def __init__(self):
         super().__init__()
 
     def q(self, b=3):
-        out = super().p(b)
+        out = super().p(b)  # A.p(self, b)
         return out
 
     def q1(self, b=3):

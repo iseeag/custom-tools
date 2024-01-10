@@ -60,6 +60,16 @@ def unpack_call(call_frame, debug=False):
         func_name = call.func.id
         func = call_frame.f_globals.get(func_name)
         method_ptr = None
+
+        if not hasattr(func, '__name__'):  # handle __call__ case of method call
+            # func = func.__call__
+            func_instance, func = func, func.__call__
+            method_ptr = {'instance_name': func_name,
+                          'instance_ref': parse_obj_to_ast_node(func_instance, call_frame.f_globals),
+                          'method_name': func_name + '_call',
+                          'instance_type': type(func_instance),
+                          'super_class_name': func_instance.__class__.__bases__[0].__name__}
+
     elif isinstance(call.func, ast.Attribute):  # method call
         method_name = call.func.attr
         attr_list = []
@@ -123,8 +133,6 @@ def get_argument_map(func, args, kwargs, method_ptr, unparsed=False, debug=False
     post_argument_map = {}
     for k, v in argument_map.items():
         if method_ptr and isinstance(v, method_ptr['instance_type']):
-            # post_argument_map[k] = ast.Name(id=method_ptr['instance_name'],
-            #                                 ctx=ast.Load())
             post_argument_map[k] = method_ptr['instance_ref']
             method_ptr['instance_self_ref_name'] = k
         elif isinstance(v, (ast.AST, tuple, dict)):
@@ -443,7 +451,8 @@ def inline_src(called, debug=False):
     # print(ast.dump(module_ast, indent=4))
     # new_code = ast.unparse(new_func_ast)
 
-    replace_return_with_assignment(new_func_def, new_func_def.name + '_ret')
+    ret_var_name = (method_ptr['method_name'] if method_ptr else new_func_def.name) + '_ret'
+    replace_return_with_assignment(new_func_def, ret_var_name)
     if method_ptr:  # handle super() call inside method
         SuperCallTransformer(method_ptr['instance_name'],
                              method_ptr['super_class_name']).visit(new_func_ast)
