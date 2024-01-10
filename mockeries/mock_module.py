@@ -38,3 +38,16 @@ class A:
 class B:
     def __init__(self):
         self.a = A()
+
+
+class C(A):
+    def __init__(self):
+        super().__init__()
+
+    def q(self, b=3):
+        out = super().p(b)
+        return out
+
+    def q1(self, b=3):
+        out = A.p(self, b)
+        return out

@@ -4,7 +4,7 @@ import inspect
 from icecream import Source, ic
 
 from ast_inline import VariableCollector, extract_import, inline_src
-from mockeries.mock_module import A, B, add_func
+from mockeries.mock_module import A, B, C, add_func
 
 # ------- test function
 x = 1
@@ -40,9 +40,13 @@ inline_src(A.from_int(5))
 # ------ test class method from uninitiated class
 inline_src(A.p(a, 5))
 
+# ------ test super()
+c = C()
+inline_src(c.q(5))
+inline_src(c.q1(5))
+
 print(ast.dump(func_ast, indent=4))
 print(ast.unparse(func_ast))
 
 # todo:
-#  1. handle super()
-#  2. handle __call__
+#  1. handle __call__

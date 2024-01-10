@@ -78,7 +78,8 @@ def unpack_call(call_frame, debug=False):
         method_ptr = {'instance_name': instance_name,
                       'instance_ref': call.func.value,
                       'method_name': method_name,
-                      'instance_type': type(instance)}
+                      'instance_type': type(instance),
+                      'super_class_name': instance.__class__.__bases__[0].__name__}
     else:
         raise NotImplementedError
 
@@ -175,6 +176,28 @@ class ReturnToAssignmentTransformer(ast.NodeTransformer):
             )
             return ast.copy_location(new_assignment, node)
         return node
+
+
+class SuperCallTransformer(ast.NodeTransformer):
+    def __init__(self, instance_self_ref_name, super_class_name):
+        self.ancestor_stack = []
+        self.instance_self_ref_name = instance_self_ref_name
+        self.super_class_name = super_class_name
+
+    def generic_visit(self, node):
+        self.ancestor_stack.append(node)
+        super().generic_visit(node)
+        self.ancestor_stack.pop()
+        return node
+
+    def visit_Call(self, node: ast.Call):
+        if hasattr(node.func, 'id') and node.func.id == 'super':
+            # parent: ast.Attribute = self.ancestor_stack[-1]
+            # parent.value = ast.Name(id=self.super_class_name, ctx=ast.Load())
+            grandparent: ast.Call = self.ancestor_stack[-2]
+            grandparent.args.insert(0, ast.Name(id=self.instance_self_ref_name, ctx=ast.Load()))
+            return ast.Name(id=self.super_class_name, ctx=ast.Load())
+        return self.generic_visit(node)
 
 
 def replace_return_with_assignment(func_ast: ast.AST, ret_var_name='ret'):
@@ -420,8 +443,11 @@ def inline_src(called, debug=False):
     # print(ast.dump(module_ast, indent=4))
     # new_code = ast.unparse(new_func_ast)
 
-    # ReturnToAssignmentTransformer(new_func_def.name + '_ret').visit(new_func_ast)
     replace_return_with_assignment(new_func_def, new_func_def.name + '_ret')
+    if method_ptr:  # handle super() call inside method
+        SuperCallTransformer(method_ptr['instance_name'],
+                             method_ptr['super_class_name']).visit(new_func_ast)
+
     if debug:
         print('# ------------------------ new ast: ')
         print(ast.dump(new_func_ast, indent=4))
