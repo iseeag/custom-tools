@@ -50,3 +50,6 @@ inline_src(b())
 
 print(ast.dump(func_ast, indent=4))
 print(ast.unparse(func_ast))
+
+# todo:
+#  1. add import statements by checking unbound names

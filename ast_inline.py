@@ -128,10 +128,12 @@ def get_argument_map(func, args, kwargs, method_ptr, unparsed=False, debug=False
         )
         return post_argument_map
 
-    argument_map = inspect.getcallargs(func, *args, **kwargs)
-    ic(argument_map)
+    pre_argument_map = inspect.getcallargs(func, *args, **kwargs)
+    if debug:
+        ic(pre_argument_map)
+
     post_argument_map = {}
-    for k, v in argument_map.items():
+    for k, v in pre_argument_map.items():
         if method_ptr and isinstance(v, method_ptr['instance_type']):
             post_argument_map[k] = method_ptr['instance_ref']
             method_ptr['instance_self_ref_name'] = k
@@ -140,6 +142,9 @@ def get_argument_map(func, args, kwargs, method_ptr, unparsed=False, debug=False
         else:
             obj_ast = parse_obj_to_ast_node(v)
             post_argument_map[k] = obj_ast
+
+    if debug:
+        ic(post_argument_map)
 
     return post_argument_map, method_ptr
 
@@ -227,7 +232,7 @@ def replace_return_with_assignment(func_ast: ast.AST, ret_var_name='ret'):
         return
 
 
-def extrac_arg_names(argument_map: dict) -> List[str]:
+def extract_arg_names(argument_map: dict) -> List[str]:
     arg_names = []
     for arg_name, val in argument_map.items():
         if isinstance(val, tuple):
@@ -249,16 +254,16 @@ def extrac_arg_names(argument_map: dict) -> List[str]:
     return list(set(arg_names))
 
 
-def swap_var_names(func_def: ast.FunctionDef, argument_map: dict, pre_swap: dict):
+def prepend_assignments(func_def: ast.FunctionDef, argument_map: dict, pre_map: dict):
     for arg_name, val in argument_map.items():
-        new_var = pre_swap.get(arg_name, arg_name)
+        new_var = pre_map.get(arg_name, arg_name)
         if isinstance(val, ast.AST):
             func_def.body.insert(
                 0, ast.parse(f'{new_var} = {ast.unparse(val)}'))
             continue
 
         if isinstance(val, ast.Name):
-            new_var = pre_swap.get(arg_name, arg_name)
+            new_var = pre_map.get(arg_name, arg_name)
             if arg_name == val.id:
                 continue
             func_def.body.insert(
@@ -406,7 +411,7 @@ def inline_src(called, debug=False):
     # Get func/method and call args
     callFrame = inspect.currentframe().f_back
     func, args, kwargs, method_ptr = unpack_call(callFrame)
-    argument_map, method_ptr = get_argument_map(func, args, kwargs, method_ptr)
+    argument_map, method_ptr = get_argument_map(func, args, kwargs, method_ptr, debug=debug)
     input_arguments = get_argument_map(func, args, kwargs, method_ptr, unparsed=True)
     if debug:
         ic(argument_map)
@@ -420,14 +425,11 @@ def inline_src(called, debug=False):
     if debug:
         print('# ------------------------ original ast: ')
         print(ast.dump(func_ast, indent=4))
-
     print('# ------------------------ original def: ')
-    # code = ast.unparse(func_ast)
-    # print(code)
     print(src)
 
-    # Get all names from args and kwargs
-    arg_names = extrac_arg_names(argument_map)
+    # Get all var names from args and kwargs
+    arg_names = extract_arg_names(argument_map)
     ic(arg_names)
 
     # Rename vars in func/method to avoid conflicts
@@ -440,9 +442,9 @@ def inline_src(called, debug=False):
         self_rename.visit(new_func_ast)
         argument_map.pop(method_ptr['instance_self_ref_name'])
 
-    # Swap variable names, append input if needed
+    # Swap variable names, add assignments if needed
     new_func_def: ast.FunctionDef = new_func_ast.body[0]
-    swap_var_names(new_func_def, argument_map, var_to_new_var)
+    prepend_assignments(new_func_def, argument_map, var_to_new_var)
 
     # module_file_path = inspect.getsourcefile(func)
     # with open(module_file_path, 'r') as file:
