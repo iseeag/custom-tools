@@ -44,15 +44,23 @@ def expand_kwargs(node: ast.Name, global_ctx: dict):
     return kwargs
 
 
-def unpack_call(call_frame):
+def expand_args(node: ast.Name, global_ctx: dict):
+    var_name = node.id
+    var = global_ctx.get(var_name)
+    assert isinstance(var, (list, tuple))
+    args = [parse_obj_to_ast_node(v, global_ctx) for v in var]
+    return args
+
+
+def unpack_call(call_frame, debug=False):
     callNode = Source.executing(call_frame).node
 
     call = callNode.args[0]
-    if isinstance(call.func, ast.Name):
+    if isinstance(call.func, ast.Name):  # function call
         func_name = call.func.id
         func = call_frame.f_globals.get(func_name)
         method_ptr = None
-    elif isinstance(call.func, ast.Attribute):
+    elif isinstance(call.func, ast.Attribute):  # method call
         method_name = call.func.attr
         attr_list = []
         func_val = call.func.value
@@ -73,10 +81,21 @@ def unpack_call(call_frame):
                       'instance_type': type(instance)}
     else:
         raise NotImplementedError
-    args = [callOrValue(arg) for arg in call.args]
+
+    args = []
+    for arg in call.args:
+        if debug:
+            ic(arg)
+        if isinstance(arg, ast.Starred):
+            expanded_args = expand_args(arg.value, call_frame.f_globals)
+            args.extend(expanded_args)
+        else:
+            args.append(callOrValue(arg))
+
     kwargs = {}
     for kw in call.keywords:
-        ic(kw.arg, kw.value)
+        if debug:
+            ic(kw.arg, kw.value)
         if kw.arg is None and isinstance(kw.value, ast.Name):
             expanded_kwargs = expand_kwargs(kw.value, call_frame.f_globals)
             kwargs = kwargs | expanded_kwargs
@@ -86,8 +105,11 @@ def unpack_call(call_frame):
     return func, args, kwargs, method_ptr
 
 
-def get_argument_map(func, args, kwargs, method_ptr, debug=False):
+def get_argument_map(func, args, kwargs, method_ptr, unparsed=False, debug=False):
     if debug:
+        ic(args, kwargs)
+
+    if unparsed:
         post_argument_map = inspect.getcallargs(
             func,
             *[ast.unparse(arg) for arg in args],
@@ -95,8 +117,6 @@ def get_argument_map(func, args, kwargs, method_ptr, debug=False):
         )
         return post_argument_map
 
-    ic(args)
-    ic(kwargs)
     argument_map = inspect.getcallargs(func, *args, **kwargs)
     ic(argument_map)
     post_argument_map = {}
@@ -355,9 +375,8 @@ def inline_src(called, debug=False):
     # Get func/method and call args
     callFrame = inspect.currentframe().f_back
     func, args, kwargs, method_ptr = unpack_call(callFrame)
-    # return kwargs
     argument_map, method_ptr = get_argument_map(func, args, kwargs, method_ptr)
-    input_arguments = get_argument_map(func, args, kwargs, method_ptr, debug=True)
+    input_arguments = get_argument_map(func, args, kwargs, method_ptr, unparsed=True)
     if debug:
         ic(argument_map)
     ic(input_arguments)

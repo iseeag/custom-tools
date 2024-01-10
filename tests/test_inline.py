@@ -15,11 +15,13 @@ inline_src(add_func(1, 1))
 inline_src(add_func([1], x, 1, 2, 3, k={3: 4}, z=z))
 
 # ------- test function with *args and **kwargs
+some_args = (1, 2, 3)
+inline_src(add_func(1, *some_args))
+
 some_kwargs = {'k': 9, 'b': 3}
-args = (1, 2, 3)
 inline_src(add_func(1, 2, **some_kwargs))
-inline_src(add_func(*args, **some_kwargs))
-inspect.getcallargs(add_func, *args, **some_kwargs)
+
+inline_src(add_func(*some_args, **some_kwargs))
 # ------- test instance method
 a = A()
 argument_map, func_ast, new_func_ast = inline_src(a.p(2), debug=True)
@@ -42,5 +44,3 @@ print(ast.unparse(func_ast))
 #  1. handle super()
 #  1a. handle calling method from uninitialized class
 #  2. handle __call__
-#  3. handle empty dict **kwargs
-#  4. handle *args generate var = *args erroneous syntax, also check for **kwargs
