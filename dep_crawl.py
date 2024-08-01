@@ -1,9 +1,10 @@
 import sys
 import ast
 import inspect
+from functools import reduce
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel
 
@@ -36,24 +37,29 @@ def is_builtin_module(module_name):
     return module_name in sys.builtin_module_names
 
 
+def get_value_from_state_dict(ref: str, state_dict: Dict) -> Any:
+    mod_name, *rest = ref.split('.')
+    value = reduce(getattr, rest, state_dict[mod_name])
+    return value
+
+
 def get_module_src_file(imp: Import) -> str | None:
     states = {}
     stmt = f"import {imp.module}"
     exec(stmt, states)
-    mod_name, *rest = imp.module.split('.')
-    from functools import reduce
-    value = reduce(getattr, rest, states[mod_name])
+    value = get_value_from_state_dict(imp.module, states)
     return inspect.getfile(value)
 
 
 def get_src_file(imp: Import) -> str | None:
     states = {}
     exec(imp.stmt, states)
-    if isinstance(states[imp.obj], (ModuleType, FunctionType, MethodType)) or inspect.isclass(states[imp.obj]):
+    obj = get_value_from_state_dict(imp.obj, states)
+    if isinstance(obj, (ModuleType, FunctionType, MethodType)) or inspect.isclass(obj):
         if is_builtin_module(imp.obj):
             return
-        return inspect.getfile(states[imp.obj])
-    if isinstance(states[imp.obj], (int, float, str, list, dict, tuple)):
+        return inspect.getfile(obj)
+    if isinstance(obj, (int, float, str, list, dict, tuple)):
         return get_module_src_file(imp)
 
 
