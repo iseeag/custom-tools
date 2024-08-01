@@ -1,10 +1,10 @@
 import ast
-from types import ModuleType, FunctionType, MethodType
-
-from pydantic import BaseModel
-from typing import Optional, List
 import inspect
 from pathlib import Path
+from types import FunctionType, MethodType, ModuleType
+from typing import List, Optional
+
+from pydantic import BaseModel
 
 
 class Import(BaseModel):
@@ -42,7 +42,6 @@ def get_module_src_file(imp: Import) -> str | None:
 
 
 def get_src_file(imp: Import) -> str | None:
-    print(imp)
     states = {}
     exec(imp.stmt, states)
     if isinstance(states[imp.obj], (ModuleType, FunctionType, MethodType)) or inspect.isclass(states[imp.obj]):
@@ -55,7 +54,7 @@ def is_sub_path(path: str, bound_path: str) -> bool:
     return Path(path).resolve().is_relative_to(Path(bound_path).resolve())
 
 
-def get_src_file_rec(file: str, bound_path: str) -> List[str]:
+def get_src_files(file: str, bound_path: str = '.') -> List[str]:
     if not is_sub_path(file, bound_path):
         return []
     imports = extract_imports(file)
@@ -65,5 +64,5 @@ def get_src_file_rec(file: str, bound_path: str) -> List[str]:
             if not is_sub_path(src_file, bound_path):
                 continue
             src_files.append(src_file)
-            src_files.extend(get_src_file_rec(src_file, bound_path))
+            src_files.extend(get_src_files(src_file, bound_path))
     return list(set(src_files))
