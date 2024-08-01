@@ -1,3 +1,4 @@
+import sys
 import ast
 import inspect
 from pathlib import Path
@@ -31,6 +32,10 @@ def extract_imports(file_path) -> List[Import]:
     return imports
 
 
+def is_builtin_module(module_name):
+    return module_name in sys.builtin_module_names
+
+
 def get_module_src_file(imp: Import) -> str | None:
     states = {}
     stmt = f"import {imp.module}"
@@ -45,24 +50,36 @@ def get_src_file(imp: Import) -> str | None:
     states = {}
     exec(imp.stmt, states)
     if isinstance(states[imp.obj], (ModuleType, FunctionType, MethodType)) or inspect.isclass(states[imp.obj]):
+        if is_builtin_module(imp.obj):
+            return
         return inspect.getfile(states[imp.obj])
     if isinstance(states[imp.obj], (int, float, str, list, dict, tuple)):
         return get_module_src_file(imp)
 
 
-def is_sub_path(path: str, bound_path: str) -> bool:
-    return Path(path).resolve().is_relative_to(Path(bound_path).resolve())
+def is_sub_path(path: str, bound_path: str, is_abs=False) -> bool:
+    if is_abs:
+        return Path(path).is_relative_to(Path(bound_path))
+    else:
+        return Path(path).resolve().is_relative_to(Path(bound_path).resolve())
 
 
-def get_src_files(file: str, bound_path: str = '.') -> List[str]:
-    if not is_sub_path(file, bound_path):
+def get_src_files(file: str, bound_path: str = '.', extracted: List[str] = None, is_abs=False) -> List[str]:
+    if extracted is None:
+        extracted = []
+    if not is_sub_path(file, bound_path, is_abs):
         return []
     imports = extract_imports(file)
     src_files = []
     for imp in imports:
         if (src_file := get_src_file(imp)) is not None:
-            if not is_sub_path(src_file, bound_path):
+            if not is_sub_path(src_file, bound_path, is_abs):
                 continue
-            src_files.append(src_file)
-            src_files.extend(get_src_files(src_file, bound_path))
-    return list(set(src_files))
+            if src_file not in src_files + extracted:
+                src_files.append(src_file)
+    extracted = list(set(src_files + extracted))
+    final_src_files = []
+    for src_file in src_files:
+        sub_src_files = get_src_files(src_file, bound_path, extracted, is_abs)
+        final_src_files.extend(sub_src_files)
+    return list(set(final_src_files + extracted))
