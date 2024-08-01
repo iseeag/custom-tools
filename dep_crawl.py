@@ -1,10 +1,10 @@
-import sys
 import ast
 import inspect
+import sys
 from functools import reduce
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
