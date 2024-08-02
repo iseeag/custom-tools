@@ -1,5 +1,6 @@
 import ast
 import inspect
+import os
 import sys
 from functools import reduce
 from pathlib import Path
@@ -70,7 +71,13 @@ def is_sub_path(path: str, bound_path: str, is_abs=False) -> bool:
         return Path(path).resolve().is_relative_to(Path(bound_path).resolve())
 
 
-def get_src_files(file: str, bound_path: str = '.', extracted: List[str] = None, is_abs=False) -> List[str]:
+def to_relative_path(abs_path) -> str:
+    current_working_directory = os.getcwd()
+    relative_path = os.path.relpath(abs_path, current_working_directory)
+    return relative_path
+
+
+def get_src_files_rec(file: str, bound_path: str = '.', extracted: List[str] = None, is_abs=False) -> List[str]:
     if extracted is None:
         extracted = []
     if not is_sub_path(file, bound_path, is_abs):
@@ -86,6 +93,13 @@ def get_src_files(file: str, bound_path: str = '.', extracted: List[str] = None,
     extracted = list(set(src_files + extracted))
     final_src_files = []
     for src_file in src_files:
-        sub_src_files = get_src_files(src_file, bound_path, extracted, is_abs)
+        sub_src_files = get_src_files_rec(src_file, bound_path, extracted, is_abs)
         final_src_files.extend(sub_src_files)
     return list(set(final_src_files + extracted))
+
+
+def get_src_files(file: str, bound_path: str = '.', is_abs=False) -> List[str]:
+    files = get_src_files_rec(file, bound_path, [], is_abs)
+    if is_abs:
+        return files
+    return [to_relative_path(file) for file in files]
