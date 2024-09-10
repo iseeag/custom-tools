@@ -36,5 +36,8 @@ mytools.inline_src(break_even_win_rate(2))
 ```
 
 ## other integrations
+
 * [sorcery](https://github.com/alexmojaki/sorcery) for magic spell
 * [incant](https://github.com/Tinche/incant) for dependency injection
+* [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for parsing with sample
+  usage [auto-code-rover](https://github.com/nus-apr/auto-code-rover)
