@@ -35,5 +35,6 @@ mytools.inline_src(break_even_win_rate(2))
 # # --------------------------------------
 ```
 
-
-
+## other integrations
+* [sorcery](https://github.com/alexmojaki/sorcery) for magic spell
+* [incant](https://github.com/Tinche/incant) for dependency injection
